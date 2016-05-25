@@ -27,13 +27,15 @@ object Expedia {
     import sqlContext.implicits._
 
     // Test data
-    val test = sqlContext.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("../Expedia/test.csv")
-    test.registerTempTable("test")
-    val subTest = sqlContext.sql("SELECT * FROM test LIMIT 1000").toDF()
+    val test = sqlContext.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("hdfs://localhost:9000/Expedia/test.csv")
+    //test.registerTempTable("test")
+    //val subTest = sqlContext.sql("SELECT * FROM test LIMIT 10000").toDF()
+    //subTest.write.format("com.databricks.spark.csv").option("header","true").save("test.csv")
 
 
     // Train data
     var train = sqlContext.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("hdfs://localhost:9000/Expedia/SparkTrainData.csv").toDF()
+
 
     train = train
       .withColumn("date_time", $"date_time".cast("timestamp"))  // cast to timestamp
@@ -41,14 +43,12 @@ object Expedia {
       .withColumn("month",month($"date_time")) // add month colmun
       .withColumn("month_day",dayofmonth($"date_time"))
       .withColumn("year_day",dayofyear($"date_time"))
+      .withColumn("srch_ci_date",$"srch_ci".cast("timestamp"))
+      .withColumn("srch_co_date",$"srch_co".cast("timestamp"))
+      .withColumn("nights_booked",dayofyear($"srch_co")-dayofyear($"srch_ci"))
 
 
-    // Using a map on rows
-    //train.map {
-    //  case Row(col1: String, col2: Int, col3: Int) => (col1, col2, col3, DateTime.parse(col1, DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).getYear)
-    //}.toDF("date_time", "site_name", "posa_continent", "year").show()
 
-    
     // Target
     val target = train.select("hotel_cluster")
     train.printSchema()
