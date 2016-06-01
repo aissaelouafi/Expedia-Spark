@@ -7,13 +7,11 @@ import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.sql.functions._
+import org.apache.spark.mllib.feature.PCA
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.linalg.{Vectors,SparseVector,DenseVector}
 
 object Expedia {
-  /**
-    *
-    * @param args
-    */
-
   def main(args: Array[String]) {
     val conf = new SparkConf().setAppName("Expedia-Kaggle-Competition").setMaster("local")
     val sc = new SparkContext(conf)
@@ -34,25 +32,56 @@ object Expedia {
 
 
     // Train data
-    var train = sqlContext.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("hdfs://localhost:9000/Expedia/SparkTrainData.csv").toDF()
+    var train = sqlContext.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("hdfs://localhost:9000/Expedia/SparkTrainData.csv")
 
 
+    // Destinations data
+    var destinations = sqlContext.read.format("com.databricks.spark.csv").option("header","true").option("inferSchema","true").load("hdfs://localhost:9000/Expedia/destinations.csv")
+
+    // Generate train features
     train = train
       .withColumn("date_time", $"date_time".cast("timestamp"))  // cast to timestamp
       .withColumn("year", year($"date_time")) // add year column
-      .withColumn("month",month($"date_time")) // add month colmun
-      .withColumn("month_day",dayofmonth($"date_time"))
-      .withColumn("year_day",dayofyear($"date_time"))
-      .withColumn("srch_ci_date",$"srch_ci".cast("timestamp"))
-      .withColumn("srch_co_date",$"srch_co".cast("timestamp"))
+
+      // srch_ci date attributs :
+      .withColumn("srch_ci",$"srch_ci".cast("timestamp"))
+      .withColumn("ci_dayofmonth",dayofmonth($"srch_ci"))
+      .withColumn("ci_month",month($"srch_ci"))
+      .withColumn("ci_dayofyear",dayofyear($"srch_ci"))
+
+      // srch_ci date attributs :
+      .withColumn("srch_co",$"srch_co".cast("timestamp"))
+      .withColumn("co_dayofmonth",dayofmonth($"srch_co"))
+      .withColumn("co_month",month($"srch_co"))
+      .withColumn("co_dayofyear",dayofyear($"srch_co"))
+
+      // nights booked
       .withColumn("nights_booked",dayofyear($"srch_co")-dayofyear($"srch_ci"))
 
+    train = train.na.fill(0)
 
+
+    // Construct a RDD[LabeledPoint] from the dataframe
+    val ignored = List("hotel_cluster")
+    val featInd = train.columns.diff(ignored).map(train.columns.indexOf(_))
+    val targetIndice = train.columns.indexOf("hotel_cluster")
+
+    train.rdd.map(r => LabeledPoint(r.getDouble(targetIndice), // Get the hotel_cluster value
+      Vectors.dense(featInd.map(r.getDouble(_)).toArray) // Map feature indice to values
+    ))
+
+
+    // Apply PCA to destinations data in order to reduce the dimension
+    val destinationRDD = destinations.rdd
+    val testt:LabeledPoint = LabeledPoint(1.0, Vectors.dense(1.0,0.0,2.0))
+    //val pca = new PCA(2).fit(testt.map(_.features))
+    println(testt.label.toString())
 
     // Target
     val target = train.select("hotel_cluster")
     train.printSchema()
     train.show()
+    println(train.stat.corr("posa_continent","user_location_country"))
   }
 
 }
